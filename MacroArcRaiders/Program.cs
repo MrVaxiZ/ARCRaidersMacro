@@ -1,0 +1,524 @@
+﻿using OpenCvSharp;
+using OpenCvSharp.Extensions;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using Point = OpenCvSharp.Point;
+
+class Program
+{
+    //private const string sourceDirectory = "templates";
+    private static bool isRunning = false;           // main toggle
+    private static bool keepProgramAlive = true;     // exit flag
+    private static LowLevelKeyboardProc _hookProc;   // prevent GC
+    private static IntPtr _hookId = IntPtr.Zero;
+
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int VK_F1 = 0x70;
+
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    private const uint WM_QUIT = 0x0012;
+
+    private enum State
+    {
+        WaitingForStart,
+        WaitingForStellaMontis,
+        WaitingForConfirm,
+        WaitingForFreeLoadout,
+        WaitingForReadyUp,
+        WaitingForBlackScreen,
+        WaitingForNonBlackAfterBlack,
+        WaitingForSurrender,
+        WaitingForYes,
+        WaitingForContinue
+    }
+
+    [STAThread]
+    public static void Main(string[] args)
+    {
+        Console.SetWindowSize(1200, 400);
+        Console.Clear();
+        Console.ForegroundColor = ConsoleColor.Magenta;
+
+        string[] asciiART =
+        {
+            "\n",
+            "+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+\n",
+            @"   ___  ______  _____ ___  ___                        _              _   _            _  ______",
+            @"  / _ \ | ___ \/  __ \|  \/  |                       | |            | | | |          (_)|___  /",
+            @" / /_\ \| |_/ /| /  \/| .  . | __ _  ___ _ __ ___    | |__  _   _   | | | | __ ___  ___    / / ",
+            @" |  _  ||    / | |    | |\/| |/ _` |/ __| '__/ _ \   | '_ \| | | |  | | | |/ _` \ \/ / |  / /  ",
+            @" | | | || |\ \ | \__/\| |  | | (_| | (__| | | (_) |  | |_) | |_| |  \ \_/ / (_| |>  <| |./ /___",
+            @" \_| |_/\_| \_| \____/\_|  |_/\__,_|\___|_|  \___/   |_.__/ \__, |   \___/ \__,_/_/\_\_|\_____/",
+            @"                                                             __/ |                            ",
+            @"                                                            |___/                             ",
+        };
+
+        foreach (string ascii in asciiART)
+        {
+            Console.WriteLine(ascii);
+        }
+
+        Console.WriteLine("+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+");
+        Console.ResetColor();
+
+        uint amountOfLoops = 0;
+        if (args.Length == 1 && args[0].All(x => char.IsDigit(x)))
+        {
+            amountOfLoops = uint.Parse(args[0]);
+            Console.WriteLine($"Bot will run for [{amountOfLoops}] loops");
+        }
+
+        Console.WriteLine("Bot ready. Press [F1] to START / PAUSE the macro");
+        Console.WriteLine("Press [Ctrl+C] to completely exit");
+        Console.WriteLine("-----------------------------------------------");
+        Console.WriteLine("REMEMBER! Start it when you have focus on the game and leave it like that!");
+        Console.WriteLine("If you want to [Alt+Tab] to something pause it first.");
+        Console.WriteLine("-----------------------------------------------");
+
+        // Handle Ctrl+C gracefully
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            keepProgramAlive = false;
+            e.Cancel = true; // Prevent immediate termination
+        };
+
+        // Install global low-level keyboard hook
+        _hookProc = HookCallback;
+        _hookId = SetHook(_hookProc);
+        if (_hookId == IntPtr.Zero)
+        {
+            Console.WriteLine("ERROR: Could not install keyboard hook. Exiting.");
+            return;
+        }
+        /*
+        var templates = new Dictionary<State, Mat>
+        {
+            { State.WaitingForStart,        LoadAsBgr(Path.Combine(sourceDirectory, "Start.png")) },
+            { State.WaitingForStellaMontis, LoadAsBgr(Path.Combine(sourceDirectory, "Stella_Montis.png")) },
+            { State.WaitingForConfirm,      LoadAsBgr(Path.Combine(sourceDirectory, "Confirm.png")) },
+            { State.WaitingForFreeLoadout,  LoadAsBgr(Path.Combine(sourceDirectory, "Free_Loadout.png")) },
+            { State.WaitingForReadyUp,      LoadAsBgr(Path.Combine(sourceDirectory, "Ready_Up.png")) },
+            { State.WaitingForYes,          LoadAsBgr(Path.Combine(sourceDirectory, "Yes.png")) },
+            { State.WaitingForContinue,     LoadAsBgr(Path.Combine(sourceDirectory, "Continue.png")) }
+        };
+        var surrenderTemplate = LoadAsBgr(Path.Combine(sourceDirectory, "Surrender.png"));
+        */
+        var templates = new Dictionary<State, Mat>
+        {
+            { State.WaitingForStart,        LoadAsBgr("Start.png") },
+            { State.WaitingForStellaMontis, LoadAsBgr("Stella_Montis.png") },
+            { State.WaitingForConfirm,      LoadAsBgr("Confirm.png") },
+            { State.WaitingForFreeLoadout,  LoadAsBgr("Free_Loadout.png") },
+            { State.WaitingForReadyUp,      LoadAsBgr("Ready_Up.png") },
+            { State.WaitingForYes,          LoadAsBgr("Yes.png") },
+            { State.WaitingForContinue,     LoadAsBgr("Continue.png") }
+        };
+        var surrenderTemplate = LoadAsBgr("Surrender.png");
+
+        uint mainThreadId = GetCurrentThreadId();
+
+        // Start bot logic in background thread
+        var workerThread = new Thread(() => BotLoop(templates, surrenderTemplate, amountOfLoops, mainThreadId));
+        workerThread.Start();
+
+        // Main thread: blocking message pump
+        MSG msg;
+        while (GetMessage(out msg, IntPtr.Zero, 0, 0))
+        {
+            TranslateMessage(ref msg);
+            DispatchMessage(ref msg);
+            Thread.Sleep(50);
+        }
+
+        // Cleanup
+        UnhookWindowsHookEx(_hookId);
+
+        Console.WriteLine("Exiting...");
+
+        // Dispose templates
+        foreach (var mat in templates.Values) mat.Dispose();
+        surrenderTemplate.Dispose();
+    }
+
+    private static void BotLoop(Dictionary<State, Mat> templates, Mat surrenderTemplate, uint amountOfLoops, uint mainThreadId)
+    {
+        uint amountOfCompletedLoops = 0;
+        State currentState = State.WaitingForStart;
+        while (keepProgramAlive)
+        {
+            if (!isRunning)
+            {
+                Thread.Sleep(200);
+                continue;
+            }
+            using var screenMat = CaptureScreenAsBgrMat();
+            switch (currentState)
+            {
+                case State.WaitingForStart:
+                    Console.WriteLine(" --- [State 1 - WaitingForStart] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForStart], out _, centerOffsetY: 0))
+                        currentState = State.WaitingForStellaMontis;
+                    break;
+                case State.WaitingForStellaMontis:
+                    Console.WriteLine(" --- [State 2 - WaitingForStellaMontis] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForStellaMontis], out _, centerOffsetY: -0.3f))
+                        currentState = State.WaitingForConfirm;
+                    break;
+                case State.WaitingForConfirm:
+                    Console.WriteLine(" --- [State 3 - WaitingForConfirm] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForConfirm], out _, centerOffsetY: 0))
+                        currentState = State.WaitingForFreeLoadout;
+                    break;
+                case State.WaitingForFreeLoadout:
+                    Console.WriteLine(" --- [State 4 - WaitingForFreeLoadout] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForFreeLoadout], out _, centerOffsetY: 0))
+                        currentState = State.WaitingForReadyUp;
+                    break;
+                case State.WaitingForReadyUp:
+                    Console.WriteLine(" --- [State 5 - WaitingForReadyUp] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForReadyUp], out _, centerOffsetY: 0))
+                        currentState = State.WaitingForBlackScreen;
+                    break;
+                case State.WaitingForBlackScreen:
+                    Console.WriteLine(" --- [State 6 - WaitingForBlackScreen] ---");
+                    if (IsScreenAlmostBlack(screenMat))
+                    {
+                        Console.WriteLine("-> Screen is black – moving to wait section...");
+                        currentState = State.WaitingForNonBlackAfterBlack;
+                    }
+                    break;
+                case State.WaitingForNonBlackAfterBlack:
+                    Console.WriteLine(" --- [State 7 - WaitingForNonBlackAndSurrender] ---");
+                    if (IsScreenAlmostBlack(screenMat))
+                    {
+                        Console.WriteLine("Still black – waiting...");
+                        break;
+                    }
+
+                    Console.WriteLine("-> Screen is NO longer black – pressing [ESC]");
+
+                    PressEsc();
+
+                    Thread.Sleep(200);
+
+                    var postEscMat = CaptureScreenAsBgrMat();
+                    if (TryFindAndClick(postEscMat, surrenderTemplate, out _, centerOffsetY: 0))
+                    {
+                        currentState = State.WaitingForYes;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Surrender NOT found – will retry on next loop");
+                    }
+                    break;
+                case State.WaitingForYes:
+                    Console.WriteLine(" --- [State 8 - WaitingForYes] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForYes], out _, centerOffsetY: 0))
+                        currentState = State.WaitingForContinue;
+                    break;
+                case State.WaitingForContinue:
+                    Console.WriteLine(" --- [State 9 - WaitingForContinue] ---");
+                    if (TryFindAndMultiClick(screenMat, templates[State.WaitingForContinue], 6, 50))
+                    {
+                        Console.WriteLine("Loop ended – Going back to beginning");
+                        if (amountOfLoops != 0)
+                        {
+                            ++amountOfCompletedLoops;
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n---------------------------------------------------------------");
+                            Console.WriteLine($" ---[ COMPLETED {amountOfCompletedLoops}/{amountOfLoops} ]---");
+                            Console.WriteLine("---------------------------------------------------------------\n");
+                            Console.ResetColor();
+                            if (amountOfCompletedLoops == amountOfLoops)
+                            {
+                                Console.WriteLine("Everything Done! \\[^_^]/");
+                                keepProgramAlive = false;
+                            }
+                        }
+                        currentState = State.WaitingForStart;
+                    }
+                    break;
+            }
+            Thread.Sleep(500);
+        }
+        // Post WM_QUIT to main thread to exit message loop
+        PostThreadMessage(mainThreadId, WM_QUIT, UIntPtr.Zero, IntPtr.Zero);
+    }
+
+    private static IntPtr SetHook(LowLevelKeyboardProc proc)
+    {
+        using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
+        using var curModule = curProcess.MainModule!;
+        return SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
+    }
+
+    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN)
+        {
+            int vkCode = Marshal.ReadInt32(lParam);
+            if (vkCode == VK_F1)
+            {
+                isRunning = !isRunning;
+                Console.ForegroundColor = isRunning ? ConsoleColor.Green : ConsoleColor.Yellow;
+                Console.WriteLine(isRunning ? "MACRO STARTED" : "MACRO PAUSED");
+                Console.ResetColor();
+
+                return (IntPtr)1;
+            }
+        }
+        return CallNextHookEx(_hookId, nCode, wParam, lParam);
+    }
+
+    // Helper method – always returns 3-channel BGR Mat or throws
+    private static Mat LoadAsBgr(string resourceName)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var fullResourceName = $"MacroArcRaiders.{resourceName}";
+
+        using var stream = assembly.GetManifestResourceStream(fullResourceName);
+        if (stream == null)
+            throw new Exception($"Cannot find embedded resource: {fullResourceName}. Ensure it's marked as 'Embedded Resource' and the name/namespace matches.");
+
+        // Read stream to byte array
+        byte[] bytes = new byte[stream.Length];
+        stream.Read(bytes, 0, bytes.Length);
+
+        // Load from bytes (ImDecode handles any format)
+        var mat = Cv2.ImDecode(bytes, ImreadModes.AnyColor);
+        if (mat.Empty())
+            throw new Exception($"Cannot load template from resource: {resourceName}");
+
+        // Convert to 3-channel BGR if needed (same as before)
+        if (mat.Channels() == 4)
+        {
+            Cv2.CvtColor(mat, mat, ColorConversionCodes.BGRA2BGR);
+        }
+        else if (mat.Channels() == 1)
+        {
+            Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
+        }
+        else if (mat.Channels() == 3)
+        {
+            if (mat.Type() != MatType.CV_8UC3)
+                Cv2.CvtColor(mat, mat, ColorConversionCodes.RGB2BGR);
+        }
+        else
+        {
+            throw new Exception($"Unsupported channels ({mat.Channels()}) in {resourceName}");
+        }
+        return mat;
+    }
+
+    // Returns true if found and clicked false otherwise
+    private static bool TryFindAndClick(Mat screen, Mat template, out Point location, float centerOffsetY = 0f)
+    {
+        location = new Point(-1, -1);
+
+        if (template.Empty() || screen.Empty()) return false;
+
+        using var result = new Mat();
+        Cv2.MatchTemplate(screen, template, result, TemplateMatchModes.CCoeffNormed);
+
+        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+
+        const double threshold = 0.80; //<- adjust (0.75–0.85)
+        if (maxVal < threshold) return false;
+
+        int centerX = maxLoc.X + template.Width / 2;
+        int centerY = maxLoc.Y + (int)(template.Height * (0.5f + centerOffsetY));
+
+        // Borders – Do NOT go over the screen 
+        centerX = Math.Clamp(centerX, 0, screen.Width - 1);
+        centerY = Math.Clamp(centerY, 0, screen.Height - 1);
+
+        Console.WriteLine($"Found! ({centerX},{centerY})  Confidence: {maxVal:P2}");
+        SetCursorPos(centerX, centerY);
+        Thread.Sleep(80);
+        LeftClick();
+
+        location = new Point(centerX, centerY);
+        return true;
+    }
+
+    // 4 left presses when continue detected
+    private static bool TryFindAndMultiClick(Mat screen, Mat template, int clickCount, int delayMs)
+    {
+        if (TryFindAndClick(screen, template, out _, 0f))
+        {
+            for (int i = 1; i < clickCount; i++)
+            {
+                Thread.Sleep(delayMs);
+                LeftClick();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private static bool IsScreenAlmostBlack(Mat mat)
+    {
+        if (mat.Empty())
+        {
+            Console.WriteLine("Black check: empty Mat");
+            return false;
+        }
+
+        // Expect CV_8UC3 (3 channels, 8-bit unsigned) – most common for color screenshots
+        if (mat.Type() != MatType.CV_8UC3)
+        {
+            Console.WriteLine($"Black check: unsupported type {mat.Type()} (expected CV_8UC3)");
+            return false;
+        }
+
+        const int tolerance = 6;
+        const double blackPixelRatio = 0.998;
+
+        long blackCount = 0;
+        long total = (long)mat.Width * mat.Height;
+
+        for (int y = 0; y < mat.Rows; y++)
+        {
+            for (int x = 0; x < mat.Cols; x++)
+            {
+                // .At<Vec3b>(y, x) returns BGR values (Item0=B, Item1=G, Item2=R)
+                Vec3b pixel = mat.At<Vec3b>(y, x);
+
+                if (pixel.Item2 <= tolerance &&  // R
+                    pixel.Item1 <= tolerance &&  // G
+                    pixel.Item0 <= tolerance)    // B
+                {
+                    blackCount++;
+                }
+            }
+        }
+
+        double ratio = (double)blackCount / total;
+        Console.Write($"Black check: {ratio:P3} ({blackCount}/{total} black pixels) ");
+        return ratio >= blackPixelRatio;
+    }
+
+    private static Mat CaptureScreenAsBgrMat()
+    {
+        var bounds = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
+
+        // Create Bitmap WITHOUT alpha channel → Format24bppRgb = 3 channels (RGB)
+        using var bmp = new Bitmap(bounds.Width, bounds.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.CopyFromScreen(bounds.Location, System.Drawing.Point.Empty, bounds.Size);
+        }
+
+        // Convert to Mat → should now be CV_8UC3 (BGR order, as OpenCV expects)
+        var mat = BitmapConverter.ToMat(bmp);
+
+        // Safety fallback: if somehow still not 3 channels, force conversion
+        if (mat.Channels() != 3)
+        {
+            Console.WriteLine($"Screenshot unexpectedly has {mat.Channels()} channels – forcing to BGR");
+            var converted = new Mat();
+            if (mat.Channels() == 4)
+                Cv2.CvtColor(mat, converted, ColorConversionCodes.BGRA2BGR);
+            else if (mat.Channels() == 1)
+                Cv2.CvtColor(mat, converted, ColorConversionCodes.GRAY2BGR);
+            else
+                throw new Exception($"Unexpected screenshot channels: {mat.Channels()}");
+
+            mat.Dispose();
+            mat = converted;
+        }
+
+        return mat;
+    }
+
+    private static void LeftClick()
+    {
+        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+        Thread.Sleep(40);
+        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+    }
+
+    private static void PressEsc()
+    {
+        const byte VK_ESCAPE = 0x1B;
+        keybd_event(VK_ESCAPE, 0, 0, 0);           // down
+        Thread.Sleep(50);
+        keybd_event(VK_ESCAPE, 0, 2, 0);           // up
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int x;
+        public int y;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostThreadMessage(uint idThread, uint Msg, UIntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+}
