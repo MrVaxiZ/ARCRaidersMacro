@@ -6,29 +6,45 @@ using Point = OpenCvSharp.Point;
 
 class Program
 {
-    //private const string sourceDirectory = "templates";
+    // resolution templates were made with
+    private const int BASE_WIDTH = 2560;
+    private const int BASE_HEIGHT = 1440;
+
     private static bool isRunning = false;           // main toggle
     private static bool keepProgramAlive = true;     // exit flag
     private static LowLevelKeyboardProc _hookProc;   // prevent GC
     private static IntPtr _hookId = IntPtr.Zero;
 
-    private const int WH_KEYBOARD_LL = 13;
-    private const int WM_KEYDOWN = 0x0100;
-    private const int VK_F1 = 0x70;
+    private const short WH_KEYBOARD_LL = 13;
+    private const short WM_KEYDOWN = 0x0100;
+    private const byte VK_F1 = 0x70;
+    private const byte VK_F2 = 0x71;
+    private const byte VK_ESCAPE = 0x1B; // For menu
+    private const byte VK_F = 0x46; // For flashlight
+    private const byte VK_W = 0x57; // In case if surreder was not found for a long time it moves charackter forward in hope that it will trigger some difference in brightness that will make surrender easier to find
 
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
     private const uint WM_QUIT = 0x0012;
 
+    private static State currentState = State.WaitingForStart;
+    private static bool isStellaMontisClicked = false;
+    private static bool isFreeLoadoutClicked = false;
+    private static uint amountOfCompletedLoops = 0;
+    private static ushort amountOfAttemptToFindSurrender = 0;
+
     private enum State
     {
         WaitingForStart,
-        WaitingForStellaMontis,
+        WaitingForStellaMontisA,
+        WaitingForStellaMontisB,
         WaitingForConfirm,
-        WaitingForFreeLoadout,
+        WaitingForFreeLoadoutA,
+        WaitingForFreeLoadoutB,
         WaitingForReadyUp,
         WaitingForBlackScreen,
-        WaitingForNonBlackAfterBlack,
+        WaitingForNonBlackAfterBlackA,
+        WaitingForNonBlackAfterBlackB,
         WaitingForSurrender,
         WaitingForYes,
         WaitingForContinue
@@ -37,7 +53,6 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        Console.SetWindowSize(1200, 400);
         Console.Clear();
         Console.ForegroundColor = ConsoleColor.Magenta;
 
@@ -53,6 +68,7 @@ class Program
             @" \_| |_/\_| \_| \____/\_|  |_/\__,_|\___|_|  \___/   |_.__/ \__, |   \___/ \__,_/_/\_\_|\_____/",
             @"                                                             __/ |                            ",
             @"                                                            |___/                             ",
+            "+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+\n",
         };
 
         foreach (string ascii in asciiART)
@@ -60,7 +76,6 @@ class Program
             Console.WriteLine(ascii);
         }
 
-        Console.WriteLine("+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+");
         Console.ResetColor();
 
         uint amountOfLoops = 0;
@@ -71,6 +86,7 @@ class Program
         }
 
         Console.WriteLine("Bot ready. Press [F1] to START / PAUSE the macro");
+        Console.WriteLine("You can also reset macro back to stage 1 with [F2]");
         Console.WriteLine("Press [Ctrl+C] to completely exit");
         Console.WriteLine("-----------------------------------------------");
         Console.WriteLine("REMEMBER! Start it when you have focus on the game and leave it like that!");
@@ -92,35 +108,48 @@ class Program
             Console.WriteLine("ERROR: Could not install keyboard hook. Exiting.");
             return;
         }
-        /*
+
         var templates = new Dictionary<State, Mat>
         {
-            { State.WaitingForStart,        LoadAsBgr(Path.Combine(sourceDirectory, "Start.png")) },
-            { State.WaitingForStellaMontis, LoadAsBgr(Path.Combine(sourceDirectory, "Stella_Montis.png")) },
-            { State.WaitingForConfirm,      LoadAsBgr(Path.Combine(sourceDirectory, "Confirm.png")) },
-            { State.WaitingForFreeLoadout,  LoadAsBgr(Path.Combine(sourceDirectory, "Free_Loadout.png")) },
-            { State.WaitingForReadyUp,      LoadAsBgr(Path.Combine(sourceDirectory, "Ready_Up.png")) },
-            { State.WaitingForYes,          LoadAsBgr(Path.Combine(sourceDirectory, "Yes.png")) },
-            { State.WaitingForContinue,     LoadAsBgr(Path.Combine(sourceDirectory, "Continue.png")) }
+            { State.WaitingForStart,         LoadAsBgr("Start.png") },
+            { State.WaitingForStellaMontisA, LoadAsBgr("Stella_Montis_NotClicked.png") },
+            { State.WaitingForStellaMontisB, LoadAsBgr("Stella_Montis.png") },
+            { State.WaitingForConfirm,       LoadAsBgr("Confirm.png") },
+            { State.WaitingForFreeLoadoutA,  LoadAsBgr("Free_Loadout_NotClicked.png") },
+            { State.WaitingForFreeLoadoutB,  LoadAsBgr("Free_Loadout.png") },
+            { State.WaitingForReadyUp,       LoadAsBgr("Ready_Up.png") },
+            { State.WaitingForYes,           LoadAsBgr("Yes.png") },
+            { State.WaitingForContinue,      LoadAsBgr("Continue.png") }
         };
-        var surrenderTemplate = LoadAsBgr(Path.Combine(sourceDirectory, "Surrender.png"));
-        */
-        var templates = new Dictionary<State, Mat>
-        {
-            { State.WaitingForStart,        LoadAsBgr("Start.png") },
-            { State.WaitingForStellaMontis, LoadAsBgr("Stella_Montis.png") },
-            { State.WaitingForConfirm,      LoadAsBgr("Confirm.png") },
-            { State.WaitingForFreeLoadout,  LoadAsBgr("Free_Loadout.png") },
-            { State.WaitingForReadyUp,      LoadAsBgr("Ready_Up.png") },
-            { State.WaitingForYes,          LoadAsBgr("Yes.png") },
-            { State.WaitingForContinue,     LoadAsBgr("Continue.png") }
-        };
-        var surrenderTemplate = LoadAsBgr("Surrender.png");
+        var surrenderTemplateA = LoadAsBgr("Surrender.png");
+        var surrenderTemplateB = LoadAsBgr("Surrender_black.png");
 
         uint mainThreadId = GetCurrentThreadId();
 
+        var screenBounds = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
+        double scaleX = screenBounds.Width / (double)BASE_WIDTH;
+        double scaleY = screenBounds.Height / (double)BASE_HEIGHT;
+
+        Console.WriteLine($"Screen detected: {screenBounds.Width}x{screenBounds.Height}");
+        Console.WriteLine($"Scaling templates by {scaleX:0.###}x / {scaleY:0.###}x");
+
+        if (Math.Abs(scaleX - 1.0) < 0.01 && Math.Abs(scaleY - 1.0) < 0.01)
+        {
+            Console.WriteLine("-> Running at native 1440p – no scaling needed");
+        }
+        else
+        {
+            // Scale every template (including surrender)
+            foreach (var kvp in templates)
+            {
+                templates[kvp.Key] = ResizeTemplate(kvp.Value, scaleX, scaleY);
+            }
+            surrenderTemplateA = ResizeTemplate(surrenderTemplateA, scaleX, scaleY);
+            surrenderTemplateB = ResizeTemplate(surrenderTemplateB, scaleX, scaleY);
+        }
+
         // Start bot logic in background thread
-        var workerThread = new Thread(() => BotLoop(templates, surrenderTemplate, amountOfLoops, mainThreadId));
+        var workerThread = new Thread(() => BotLoop(templates, surrenderTemplateA, surrenderTemplateB, amountOfLoops, mainThreadId));
         workerThread.Start();
 
         // Main thread: blocking message pump
@@ -139,13 +168,12 @@ class Program
 
         // Dispose templates
         foreach (var mat in templates.Values) mat.Dispose();
-        surrenderTemplate.Dispose();
+        surrenderTemplateA.Dispose();
+        surrenderTemplateB.Dispose();
     }
 
-    private static void BotLoop(Dictionary<State, Mat> templates, Mat surrenderTemplate, uint amountOfLoops, uint mainThreadId)
+    private static void BotLoop(Dictionary<State, Mat> templates, Mat surrenderTemplateA, Mat surrenderTemplateB, uint amountOfLoops, uint mainThreadId)
     {
-        uint amountOfCompletedLoops = 0;
-        State currentState = State.WaitingForStart;
         while (keepProgramAlive)
         {
             if (!isRunning)
@@ -159,24 +187,55 @@ class Program
                 case State.WaitingForStart:
                     Console.WriteLine(" --- [State 1 - WaitingForStart] ---");
                     if (TryFindAndClick(screenMat, templates[State.WaitingForStart], out _, centerOffsetY: 0))
-                        currentState = State.WaitingForStellaMontis;
+                        currentState = State.WaitingForStellaMontisA;
                     break;
-                case State.WaitingForStellaMontis:
-                    Console.WriteLine(" --- [State 2 - WaitingForStellaMontis] ---");
-                    if (TryFindAndClick(screenMat, templates[State.WaitingForStellaMontis], out _, centerOffsetY: -0.3f))
+                case State.WaitingForStellaMontisA:
+                    Console.WriteLine(" --- [State 2A - WaitingForStellaMontis] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForStellaMontisA], out _, centerOffsetY: -0.3f))
+                    {
+                        isStellaMontisClicked = true;
                         currentState = State.WaitingForConfirm;
+                    }
+                    else
+                        currentState = State.WaitingForStellaMontisB;
+                    break;
+                case State.WaitingForStellaMontisB:
+                    Console.WriteLine(" --- [State 2B - WaitingForStellaMontis] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForStellaMontisB], out _, centerOffsetY: -0.3f))
+                    {
+                        isStellaMontisClicked = true;
+                        currentState = State.WaitingForConfirm;
+                    }
+                    else if(!isStellaMontisClicked)
+                        currentState = State.WaitingForStellaMontisA;
                     break;
                 case State.WaitingForConfirm:
                     Console.WriteLine(" --- [State 3 - WaitingForConfirm] ---");
                     if (TryFindAndClick(screenMat, templates[State.WaitingForConfirm], out _, centerOffsetY: 0))
-                        currentState = State.WaitingForFreeLoadout;
+                        currentState = State.WaitingForFreeLoadoutA;
                     break;
-                case State.WaitingForFreeLoadout:
-                    Console.WriteLine(" --- [State 4 - WaitingForFreeLoadout] ---");
-                    if (TryFindAndClick(screenMat, templates[State.WaitingForFreeLoadout], out _, centerOffsetY: 0))
+                case State.WaitingForFreeLoadoutA:
+                    Console.WriteLine(" --- [State 4A - WaitingForFreeLoadout] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForFreeLoadoutA], out _, centerOffsetY: 0))
+                    {
+                        isFreeLoadoutClicked = true;
                         currentState = State.WaitingForReadyUp;
+                    }
+                    else
+                        currentState = State.WaitingForFreeLoadoutB;
+                    break;
+                case State.WaitingForFreeLoadoutB:
+                    Console.WriteLine(" --- [State 4B - WaitingForFreeLoadout] ---");
+                    if (TryFindAndClick(screenMat, templates[State.WaitingForFreeLoadoutB], out _, centerOffsetY: 0))
+                    {
+                        isFreeLoadoutClicked = true;
+                        currentState = State.WaitingForReadyUp;
+                    }
+                    else if (!isFreeLoadoutClicked)
+                        currentState = State.WaitingForFreeLoadoutA;
                     break;
                 case State.WaitingForReadyUp:
+                    isFreeLoadoutClicked = false;
                     Console.WriteLine(" --- [State 5 - WaitingForReadyUp] ---");
                     if (TryFindAndClick(screenMat, templates[State.WaitingForReadyUp], out _, centerOffsetY: 0))
                         currentState = State.WaitingForBlackScreen;
@@ -186,31 +245,64 @@ class Program
                     if (IsScreenAlmostBlack(screenMat))
                     {
                         Console.WriteLine("-> Screen is black – moving to wait section...");
-                        currentState = State.WaitingForNonBlackAfterBlack;
+                        currentState = State.WaitingForNonBlackAfterBlackA;
                     }
                     break;
-                case State.WaitingForNonBlackAfterBlack:
-                    Console.WriteLine(" --- [State 7 - WaitingForNonBlackAndSurrender] ---");
-                    if (IsScreenAlmostBlack(screenMat))
-                    {
-                        Console.WriteLine("Still black – waiting...");
-                        break;
-                    }
+                case State.WaitingForNonBlackAfterBlackA:
+                    Console.WriteLine(" --- [State 7A - WaitingForNonBlackAndSurrender] ---");
+                    Console.WriteLine("-> Pressing [ESC]...");
 
-                    Console.WriteLine("-> Screen is NO longer black – pressing [ESC]");
-
-                    PressEsc();
+                    PressKey(VK_F); // Sometimes it's not too bright and not too dark so pressing F for flashlight seems to fix that
+                    PressKey(VK_ESCAPE);
 
                     Thread.Sleep(200);
 
-                    var postEscMat = CaptureScreenAsBgrMat();
-                    if (TryFindAndClick(postEscMat, surrenderTemplate, out _, centerOffsetY: 0))
+                    var postEscMatA = CaptureScreenAsBgrMat();
+                    if (TryFindAndClick(postEscMatA, surrenderTemplateA, out _, centerOffsetY: 0))
                     {
                         currentState = State.WaitingForYes;
                     }
+                    else if(amountOfAttemptToFindSurrender >= 20)
+                    {
+                        Console.WriteLine("-> Cannot find surrender for over 20 attempts.");
+                        Console.WriteLine("-> Seems like spawn point is not dark/bright enough.");
+                        Console.WriteLine("-> Attempting to move in order to fix that.");
+                        HoldKeyFor(VK_W, 3000); // Walk for 3 seconds forward in hope that it will trigger some difference in brightness that will make surrender easier to find
+                        amountOfAttemptToFindSurrender = 0;
+                    }
                     else
                     {
+                        ++amountOfAttemptToFindSurrender;
                         Console.WriteLine("Surrender NOT found – will retry on next loop");
+                        currentState = State.WaitingForNonBlackAfterBlackB;
+                    }
+                    break;
+                case State.WaitingForNonBlackAfterBlackB:
+                    Console.WriteLine(" --- [State 7B - WaitingForNonBlackAndSurrender] ---");
+                    Console.WriteLine("-> Pressing [ESC]...");
+
+                    PressKey(VK_ESCAPE);
+
+                    Thread.Sleep(200);
+
+                    var postEscMatB = CaptureScreenAsBgrMat();
+                    if (TryFindAndClick(postEscMatB, surrenderTemplateB, out _, centerOffsetY: 0))
+                    {
+                        currentState = State.WaitingForYes;
+                    }
+                    else if(amountOfAttemptToFindSurrender > 20)
+                    {
+                        Console.WriteLine("-> Cannot find surrender for over 20 attempts.");
+                        Console.WriteLine("-> Seems like spawn point is not dark/bright enough.");
+                        Console.WriteLine("-> Attempting to move in order to fix that.");
+                        HoldKeyFor(VK_W, 3000); // Walk for 3 seconds forward in hope that it will trigger some difference in brightness that will make surrender easier to find
+                        amountOfAttemptToFindSurrender = 0;
+                    }
+                    else
+                    {
+                        ++amountOfAttemptToFindSurrender;
+                        Console.WriteLine("Surrender NOT found – will retry on next loop");
+                        currentState = State.WaitingForNonBlackAfterBlackA;
                     }
                     break;
                 case State.WaitingForYes:
@@ -228,14 +320,28 @@ class Program
                             ++amountOfCompletedLoops;
                             Console.ForegroundColor = ConsoleColor.Green;
                             Console.WriteLine("\n---------------------------------------------------------------");
-                            Console.WriteLine($" ---[ COMPLETED {amountOfCompletedLoops}/{amountOfLoops} ]---");
+                            Console.WriteLine($"    ---[ COMPLETED [{amountOfCompletedLoops}/{amountOfLoops}] LOOPS ]---");
                             Console.WriteLine("---------------------------------------------------------------\n");
                             Console.ResetColor();
                             if (amountOfCompletedLoops == amountOfLoops)
                             {
                                 Console.WriteLine("Everything Done! \\[^_^]/");
+                                Console.WriteLine("Program will close in [3]");
+                                Thread.Sleep(1000);
+                                Console.WriteLine("Program will close in [2]");
+                                Thread.Sleep(1000);
+                                Console.WriteLine("Program will close in [1]");
                                 keepProgramAlive = false;
                             }
+                        }
+                        else
+                        {
+                            ++amountOfCompletedLoops;
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("\n---------------------------------------------------------------");
+                            Console.WriteLine($"    ---[ COMPLETED [{amountOfCompletedLoops}] LOOPS ]---");
+                            Console.WriteLine("---------------------------------------------------------------\n");
+                            Console.ResetColor();
                         }
                         currentState = State.WaitingForStart;
                     }
@@ -263,13 +369,60 @@ class Program
             {
                 isRunning = !isRunning;
                 Console.ForegroundColor = isRunning ? ConsoleColor.Green : ConsoleColor.Yellow;
-                Console.WriteLine(isRunning ? "MACRO STARTED" : "MACRO PAUSED");
+                Console.WriteLine(isRunning ? "\nMACRO STARTED" : "\nMACRO PAUSED");
+                Console.ResetColor();
+
+                return (IntPtr)1;
+            }
+            else if(vkCode == VK_F2)
+            {
+                isRunning = false;
+
+                currentState = State.WaitingForStart;
+                isStellaMontisClicked = false;
+                amountOfCompletedLoops = 0;
+
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                Console.WriteLine("\nMACRO RESET -> BACK TO STAGE [1] (WaitingForStart)");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("Bot ready. Press [F1] to START / PAUSE the macro");
                 Console.ResetColor();
 
                 return (IntPtr)1;
             }
         }
         return CallNextHookEx(_hookId, nCode, wParam, lParam);
+    }
+
+    // Helper method to resize templates based on screen scaling – uses InterArea for best results on downscaling
+    // Generally I am not proud of this method because it disposes the original Mat immediately which is a bit risky,
+    // but it does save a lot of memory and I don't want to keep both versions around
+    private static Mat ResizeTemplate(Mat original, double scaleX, double scaleY)
+    {
+        if (Math.Abs(scaleX - 1.0) < 0.01 && Math.Abs(scaleY - 1.0) < 0.01)
+            return original;
+
+        int newWidth = (int)(original.Width * scaleX + 0.5);
+        int newHeight = (int)(original.Height * scaleY + 0.5);
+
+        var resized = new Mat();
+
+        InterpolationFlags interp;
+        if (scaleX < 1.0 || scaleY < 1.0)
+        {
+            interp = InterpolationFlags.Area;
+        }
+        else
+        {
+            interp = InterpolationFlags.Cubic;
+        }
+
+        Cv2.Resize(original, resized, new OpenCvSharp.Size(newWidth, newHeight),
+                   interpolation: interp);
+
+        original.Dispose();
+        return resized;
     }
 
     // Helper method – always returns 3-channel BGR Mat or throws
@@ -441,12 +594,20 @@ class Program
         mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
     }
 
-    private static void PressEsc()
+    private static void PressKey(byte key)
     {
-        const byte VK_ESCAPE = 0x1B;
-        keybd_event(VK_ESCAPE, 0, 0, 0);           // down
+        keybd_event(key, 0, 0, 0);           // down
         Thread.Sleep(50);
-        keybd_event(VK_ESCAPE, 0, 2, 0);           // up
+        keybd_event(key, 0, 2, 0);           // up
+    }
+
+    private static void HoldKeyFor(byte key, int milliseconds)
+    {
+        keybd_event(key, 0, 0, UIntPtr.Zero);          // 0 = down
+
+        Thread.Sleep(milliseconds);
+
+        keybd_event(key, 0, 2, UIntPtr.Zero);          // 2 = KEYEVENTF_KEYUP
     }
 
     [StructLayout(LayoutKind.Sequential)]
