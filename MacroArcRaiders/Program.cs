@@ -347,7 +347,7 @@ class Program
                     }
                     break;
             }
-            Thread.Sleep(500);
+            Thread.Sleep(250);
         }
         // Post WM_QUIT to main thread to exit message loop
         PostThreadMessage(mainThreadId, WM_QUIT, UIntPtr.Zero, IntPtr.Zero);
