@@ -24,6 +24,7 @@
     <None Remove="Stella_Montis_NotClicked.png" />
     <None Remove="Surrender.png" />
     <None Remove="Surrender_black.png" />
+    <None Remove="templates\Skip.png" />
     <None Remove="Yes.png" />
   </ItemGroup>
 
@@ -33,6 +34,7 @@
     <EmbeddedResource Include="templates\Free_Loadout.png" />
     <EmbeddedResource Include="templates\Free_Loadout_NotClicked.png" />
     <EmbeddedResource Include="templates\Ready_Up.png" />
+    <EmbeddedResource Include="templates\Skip.png" />
     <EmbeddedResource Include="templates\Start.png" />
     <EmbeddedResource Include="templates\Stella_Montis.png" />
     <EmbeddedResource Include="templates\Stella_Montis_NotClicked.png" />

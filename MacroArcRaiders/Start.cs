@@ -72,57 +72,30 @@ namespace MacroArcRaiders
                         {
                             if (StaticVars.isStellaMontisClicked)
                             {
-                                Console.WriteLine("Stella Montis already cliecked. Skipping stage...");
+                                Console.WriteLine("Stella Montis already clicked. Skipping stage...");
                                 StaticVars.currentState = State.WaitingForConfirm;
                             }
                             else
                                 StaticVars.currentState = State.WaitingForStellaMontisA;
                         }
+                        else if(StaticVars.amountOfFailedStartAttempts > ConstVars.LIMIT_TO_FIND_PLAY) // Probably stuck on round feedback screen
+                            StaticVars.currentState = State.SpecialFeedback; // Move to state that will get rid of it
+                        else
+                            ++StaticVars.amountOfFailedStartAttempts;
                         break;
                     case State.WaitingForStellaMontisA:
-                        Console.WriteLine(" --- [State 2A - WaitingForStellaMontis] ---");
-                        if (MatHandler.TryFindAndClick(screenMat, templates[State.WaitingForStellaMontisA], out _, centerOffsetY: -0.3f))
-                        {
-                            StaticVars.isStellaMontisClicked = true;
-                            StaticVars.currentState = State.WaitingForConfirm;
-                        }
-                        else
-                            StaticVars.currentState = State.WaitingForStellaMontisB;
-                        break;
                     case State.WaitingForStellaMontisB:
-                        Console.WriteLine(" --- [State 2B - WaitingForStellaMontis] ---");
-                        if (MatHandler.TryFindAndClick(screenMat, templates[State.WaitingForStellaMontisB], out _, centerOffsetY: -0.3f))
-                        {
-                            StaticVars.isStellaMontisClicked = true;
-                            StaticVars.currentState = State.WaitingForConfirm;
-                        }
-                        else if (!StaticVars.isStellaMontisClicked)
-                            StaticVars.currentState = State.WaitingForStellaMontisA;
+                        HandleStellaMontis(templates, screenMat, StaticVars.currentState);
                         break;
                     case State.WaitingForConfirm:
+                        StaticVars.amountOfFailedStartAttempts = 0; // Reset as it found it's way to the next stage
                         Console.WriteLine(" --- [State 3 - WaitingForConfirm] ---");
                         if (MatHandler.TryFindAndClick(screenMat, templates[State.WaitingForConfirm], out _, centerOffsetY: 0))
                             StaticVars.currentState = State.WaitingForFreeLoadoutA;
                         break;
                     case State.WaitingForFreeLoadoutA:
-                        Console.WriteLine(" --- [State 4A - WaitingForFreeLoadout] ---");
-                        if (MatHandler.TryFindAndClick(screenMat, templates[State.WaitingForFreeLoadoutA], out _, centerOffsetY: 0))
-                        {
-                            StaticVars.isFreeLoadoutClicked = true;
-                            StaticVars.currentState = State.WaitingForReadyUp;
-                        }
-                        else
-                            StaticVars.currentState = State.WaitingForFreeLoadoutB;
-                        break;
                     case State.WaitingForFreeLoadoutB:
-                        Console.WriteLine(" --- [State 4B - WaitingForFreeLoadout] ---");
-                        if (MatHandler.TryFindAndClick(screenMat, templates[State.WaitingForFreeLoadoutB], out _, centerOffsetY: 0))
-                        {
-                            StaticVars.isFreeLoadoutClicked = true;
-                            StaticVars.currentState = State.WaitingForReadyUp;
-                        }
-                        else if (!StaticVars.isFreeLoadoutClicked)
-                            StaticVars.currentState = State.WaitingForFreeLoadoutA;
+                        HandleFreeLoadout(templates, screenMat, StaticVars.currentState);
                         break;
                     case State.WaitingForReadyUp:
                         StaticVars.isFreeLoadoutClicked = false;
@@ -139,63 +112,11 @@ namespace MacroArcRaiders
                         }
                         break;
                     case State.WaitingForNonBlackAfterBlackA:
-                        Console.WriteLine(" --- [State 7A - WaitingForNonBlackAndSurrender] ---");
-                        Console.WriteLine("-> Pressing [ESC]...");
-
-                        Hooks.PressKey(ConstVars.VK_F); // Sometimes it's not too bright and not too dark so pressing F for flashlight seems to fix that
-                        Hooks.PressKey(ConstVars.VK_ESCAPE);
-
-                        Thread.Sleep(200);
-
-                        var postEscMatA = MatHandler.CaptureScreenAsBgrMat();
-                        if (MatHandler.TryFindAndClick(postEscMatA, templates[State.WaitingForNonBlackAfterBlackA], out _, centerOffsetY: 0))
-                        {
-                            StaticVars.currentState = State.WaitingForYes;
-                        }
-                        else if (StaticVars.amountOfAttemptToFindSurrender >= 20)
-                        {
-                            Console.WriteLine("-> Cannot find surrender for over [20] attempts.");
-                            Console.WriteLine("-> Seems like spawn point is not dark/bright enough.");
-                            Console.WriteLine("-> Attempting to move in order to fix that.");
-                            Hooks.HoldKeyFor(ConstVars.VK_W, 3000); // Walk for 3 seconds forward in hope that it will trigger some difference in brightness that will make surrender easier to find
-                            StaticVars.amountOfAttemptToFindSurrender = 0;
-                        }
-                        else
-                        {
-                            ++StaticVars.amountOfAttemptToFindSurrender;
-                            Console.WriteLine("Surrender NOT found – will retry on next loop");
-                            StaticVars.currentState = State.WaitingForNonBlackAfterBlackB;
-                        }
-                        break;
                     case State.WaitingForNonBlackAfterBlackB:
-                        Console.WriteLine(" --- [State 7B - WaitingForNonBlackAndSurrender] ---");
-                        Console.WriteLine("-> Pressing [ESC]...");
-
-                        Hooks.PressKey(ConstVars.VK_ESCAPE);
-
-                        Thread.Sleep(200);
-
-                        var postEscMatB = MatHandler.CaptureScreenAsBgrMat();
-                        if (MatHandler.TryFindAndClick(postEscMatB, templates[State.WaitingForNonBlackAfterBlackB], out _, centerOffsetY: 0))
-                        {
-                            StaticVars.currentState = State.WaitingForYes;
-                        }
-                        else if (StaticVars.amountOfAttemptToFindSurrender > 20)
-                        {
-                            Console.WriteLine("-> Cannot find surrender for over 20 attempts.");
-                            Console.WriteLine("-> Seems like spawn point is not dark/bright enough.");
-                            Console.WriteLine("-> Attempting to move in order to fix that.");
-                            Hooks.HoldKeyFor(ConstVars.VK_W, 3000); // Walk for 3 seconds forward in hope that it will trigger some difference in brightness that will make surrender easier to find
-                            StaticVars.amountOfAttemptToFindSurrender = 0;
-                        }
-                        else
-                        {
-                            ++StaticVars.amountOfAttemptToFindSurrender;
-                            Console.WriteLine("Surrender NOT found – will retry on next loop");
-                            StaticVars.currentState = State.WaitingForNonBlackAfterBlackA;
-                        }
+                        HandleSurrenderAttempt(templates, screenMat, StaticVars.currentState);
                         break;
                     case State.WaitingForYes:
+                        StaticVars.amountOfAttemptToFindSurrender = 0;
                         Console.WriteLine(" --- [State 8 - WaitingForYes] ---");
                         if (MatHandler.TryFindAndClick(screenMat, templates[State.WaitingForYes], out _, centerOffsetY: 0))
                             StaticVars.currentState = State.WaitingForContinue;
@@ -223,8 +144,17 @@ namespace MacroArcRaiders
                             StaticVars.currentState = State.WaitingForStart;
                         }
                         break;
+                    case State.SpecialFeedback: // Special state that happens from time to time when player is asked to give feedback after round
+                        Console.WriteLine($"Detected fail for over [{ConstVars.LIMIT_TO_FIND_PLAY}] moving to special state...");
+                        Console.WriteLine(" --- [State SPECIAL - WaitingForSkip] ---");
+                        if (MatHandler.TryFindAndClick(screenMat, templates[State.SpecialFeedback], out _, centerOffsetY: 0))
+                        {
+                            StaticVars.amountOfFailedStartAttempts = 0;
+                            StaticVars.currentState = State.WaitingForStart;
+                        }
+                        break;
                 }
-                Thread.Sleep(250);
+                Thread.Sleep(ConstVars.DELAY_BETWEEN_LOOPS_MS);
             }
             // Post WM_QUIT to main thread to exit message loop
             PostThreadMessage(mainThreadId, ConstVars.WM_QUIT, UIntPtr.Zero, IntPtr.Zero);
@@ -244,8 +174,91 @@ namespace MacroArcRaiders
                 { State.WaitingForNonBlackAfterBlackA,  MatHandler.LoadAsBgr(ConstVars.SURRENDER_TEMPLATE) },
                 { State.WaitingForNonBlackAfterBlackB,  MatHandler.LoadAsBgr(ConstVars.SURRENDER_BLACK_TEMPLATE) },
                 { State.WaitingForYes,                  MatHandler.LoadAsBgr(ConstVars.YES_TEMPLATE) },
-                { State.WaitingForContinue,             MatHandler.LoadAsBgr(ConstVars.CONTINUE_TEMPLATE) }
+                { State.WaitingForContinue,             MatHandler.LoadAsBgr(ConstVars.CONTINUE_TEMPLATE) },
+                { State.SpecialFeedback,                MatHandler.LoadAsBgr(ConstVars.SKIP_TEMPLATE) },    
             };
+        }
+
+        private static void HandleStellaMontis(Dictionary<State, Mat> templates, Mat screen, State currentABState)
+        {
+            Mat template = templates[currentABState];
+            State alternate = (currentABState == State.WaitingForStellaMontisA)
+                ? State.WaitingForStellaMontisB
+                : State.WaitingForStellaMontisA;
+
+            Console.WriteLine($" --- [State 2 - {currentABState}] ---");
+
+            if (MatHandler.TryFindAndClick(screen, template, out _, centerOffsetY: -0.3f))
+            {
+                StaticVars.isStellaMontisClicked = true;
+                StaticVars.currentState = State.WaitingForConfirm;
+            }
+            else
+            {
+                StaticVars.currentState = alternate;
+            }
+        }
+
+        private static void HandleFreeLoadout(Dictionary<State, Mat> templates, Mat screen, State currentABState)
+        {
+            Mat template = templates[currentABState];
+            State alternate = (currentABState == State.WaitingForFreeLoadoutA)
+                ? State.WaitingForFreeLoadoutB
+                : State.WaitingForFreeLoadoutA;
+
+            Console.WriteLine($" --- [State 4 - {currentABState}] ---");
+
+            if (MatHandler.TryFindAndClick(screen, template, out _, centerOffsetY: 0))
+            {
+                StaticVars.isFreeLoadoutClicked = true;
+                StaticVars.currentState = State.WaitingForReadyUp;
+            }
+            else
+            {
+                StaticVars.currentState = alternate;
+            }
+        }
+
+        private static void HandleSurrenderAttempt(Dictionary<State, Mat> templates, Mat screen, State currentABState)
+        {
+            bool isA = currentABState == State.WaitingForNonBlackAfterBlackA;
+
+            Console.WriteLine($" --- [State 7 - {currentABState}] ---");
+            Console.WriteLine("-> Pressing [ESC]...");
+
+            if (isA)
+            {
+                Hooks.PressKey(ConstVars.VK_F); // flashlight only in A
+            }
+
+            Hooks.PressKey(ConstVars.VK_ESCAPE);
+            Thread.Sleep(ConstVars.DELAY_FOR_MENUS_MS);
+
+            using var postEscMat = MatHandler.CaptureScreenAsBgrMat();
+
+            Mat template = templates[currentABState];
+            State nextFailState = isA ? State.WaitingForNonBlackAfterBlackB : State.WaitingForNonBlackAfterBlackA;
+
+            if (MatHandler.TryFindAndClick(postEscMat, template, out _, centerOffsetY: 0))
+            {
+                StaticVars.currentState = State.WaitingForYes;
+                return;
+            }
+
+            if (StaticVars.amountOfAttemptToFindSurrender >= ConstVars.LIMIT_TO_FIND_SURRENDER)
+            {
+                Console.WriteLine($"-> Cannot find surrender for over [{ConstVars.LIMIT_TO_FIND_SURRENDER}] attempts.");
+                Console.WriteLine("-> Seems like spawn point is not dark/bright enough.");
+                Console.WriteLine("-> Attempting to move in order to fix that.");
+                Hooks.HoldKeyFor(ConstVars.VK_W, ConstVars.FOR_HOW_LONG_TO_MOVE_MS);
+                StaticVars.amountOfAttemptToFindSurrender = 0;
+            }
+            else
+            {
+                ++StaticVars.amountOfAttemptToFindSurrender;
+                Console.WriteLine("Surrender NOT found – will retry on next loop");
+                StaticVars.currentState = nextFailState;
+            }
         }
     }
 }

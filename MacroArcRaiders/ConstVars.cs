@@ -2,9 +2,15 @@
 {
     class ConstVars
     {
+        internal const ushort DELAY_BETWEEN_LOOPS_MS    = 250;  // Delay between each loop iteration to reduce CPU usage
+        internal const ushort DELAY_FOR_MENUS_MS        = 100;  // Delay to allow menus to load before searching for templates
+        internal const ushort LIMIT_TO_FIND_SURRENDER   = 25;   // After this many attempts to find the surrender button the macro will start to move
+        internal const ushort LIMIT_TO_FIND_PLAY        = 20;   // After this many attempts to find the play button the macro will go to special stage
+        internal const ushort FOR_HOW_LONG_TO_MOVE_MS   = 3000; // Time for how long charackter will move forward when the surrender button can't be found
+
         // Resolution templates were made with
-        internal const ushort BASE_WIDTH = 2560;
-        internal const ushort BASE_HEIGHT = 1440;
+        internal const ushort BASE_WIDTH    = 2560;
+        internal const ushort BASE_HEIGHT   = 1440;
 
         // Keys, mouse events, window messages and hook identifiers
         internal const byte WH_KEYBOARD_LL          = 13;       // Low-level keyboard hook
@@ -31,5 +37,6 @@
         internal const string SURRENDER_TEMPLATE = "Surrender.png";
         internal const string SURRENDER_BLACK_TEMPLATE = "Surrender_black.png";
         internal const string YES_TEMPLATE = "Yes.png";
+        internal const string SKIP_TEMPLATE = "Skip.png";
     }
 }

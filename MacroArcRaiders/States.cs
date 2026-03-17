@@ -14,6 +14,7 @@
         WaitingForNonBlackAfterBlackB,
         WaitingForSurrender,
         WaitingForYes,
-        WaitingForContinue
+        WaitingForContinue,
+        SpecialFeedback,
     }
 }
