@@ -28,17 +28,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Confirm.png" />
-    <EmbeddedResource Include="Continue.png" />
-    <EmbeddedResource Include="Free_Loadout.png" />
-    <EmbeddedResource Include="Free_Loadout_NotClicked.png" />
-    <EmbeddedResource Include="Ready_Up.png" />
-    <EmbeddedResource Include="Start.png" />
-    <EmbeddedResource Include="Stella_Montis.png" />
-    <EmbeddedResource Include="Stella_Montis_NotClicked.png" />
-    <EmbeddedResource Include="Surrender.png" />
-    <EmbeddedResource Include="Surrender_black.png" />
-    <EmbeddedResource Include="Yes.png" />
+    <EmbeddedResource Include="templates\Confirm.png" />
+    <EmbeddedResource Include="templates\Continue.png" />
+    <EmbeddedResource Include="templates\Free_Loadout.png" />
+    <EmbeddedResource Include="templates\Free_Loadout_NotClicked.png" />
+    <EmbeddedResource Include="templates\Ready_Up.png" />
+    <EmbeddedResource Include="templates\Start.png" />
+    <EmbeddedResource Include="templates\Stella_Montis.png" />
+    <EmbeddedResource Include="templates\Stella_Montis_NotClicked.png" />
+    <EmbeddedResource Include="templates\Surrender.png" />
+    <EmbeddedResource Include="templates\Surrender_black.png" />
+    <EmbeddedResource Include="templates\Yes.png" />
   </ItemGroup>
 
   <ItemGroup>
