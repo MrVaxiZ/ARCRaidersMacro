@@ -1,0 +1,46 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'           # <- triggers on v1.0, v1.2.3, v2.0-beta.1
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Publish single-file exe
+      run: |
+        dotnet publish MacroArcRaiders.csproj `
+          -c Release `
+          -r win-x64 `
+          --self-contained true `
+          -p:PublishSingleFile=true `
+          -p:IncludeNativeLibrariesForSelfExtract=true `
+          -o publish
+
+    - name: Copy extra files to publish folder
+      run: |
+        Copy-Item README.md publish\
+        Copy-Item RunExactAmountOfTimes.cmd publish\
+
+    - name: Zip artifact
+      run: Compress-Archive -Path publish/* -DestinationPath "ARCRaidersMacro-${{ github.ref_name }}.zip"
+
+    - name: Create Release & upload zip
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ARCRaidersMacro-${{ github.ref_name }}.zip
+        generate_release_notes: true
+        body: "Automatic build from tag ${{ github.ref_name }}"
