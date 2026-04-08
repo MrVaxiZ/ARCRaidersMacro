@@ -1,5 +1,8 @@
 # MacroArcRaiders
 
+I know it does not work after the latest patch.
+However I am too lazy to fix it so either do it yourself or you will have to wait.
+
 Simple automated surrender macro for Arc Raiders.
 
 ## How to Run It?
